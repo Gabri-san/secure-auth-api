@@ -31,7 +31,7 @@ app.listen(3000,() => console.log("Server is running on port 3000"));
 app.post('/session', (req, res) => {
     let data = req.body;
     if (data.constructor === Object && Object.keys(data).length === 0) {
-        res.status(204).send("no data");
+        res.status(204).send("NO CONTENT");
     } else {
         sequelize.models.User.findOne({
             where: { email: data.email }
@@ -56,12 +56,12 @@ app.post('/session', (req, res) => {
                     return res.cookie('access_token', token, {
                         httpOnly: true,
                         sameSite: true
-                    }).status(201).json({token});
+                    }).status(201).send("CREATED");
                 } else {
-                    res.status(401).send("accès refusé");
+                    res.status(401).send("UNAUTHORIZED");
                 }
             } else {
-                res.status(401).send("accès refusé");
+                res.status(401).send("UNAUTHORIZED");
             }
         });
     }
@@ -70,16 +70,16 @@ app.post('/session', (req, res) => {
 app.delete('/session', (req, res) => {
     const token = req.cookies.access_token;
     if (!token) {
-        res.status(401).send("accès refusé");
+        res.status(401).send("UNAUTHORIZED");
     } else {
-        return res.clearCookie('access_token').status(204).json({ message: "logged out" });
+        return res.clearCookie('access_token').status(204).json({ message: "NO CONTENT" });
     }
 });
 
 app.get('/me', (req, res) => {
     const token = req.cookies.access_token;
     if (!token) {
-        res.status(401).send("accès refusé");
+        res.status(401).send("UNAUTHORIZED");
     } else {
         jwt.verify(token, secret, (err, decoded) => {
             res.status(200).send(decoded);

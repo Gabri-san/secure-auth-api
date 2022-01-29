@@ -1,3 +1,4 @@
+const yargs = require('yargs');
 const bcrypt = require('bcryptjs');
 const db = require('./dbConnector');
 
@@ -5,19 +6,22 @@ const database = db.dbConnect;
 database.model();
 const sequelize = database.sequelizeInstance;
 
-require("yargs")
-.scriptName("adduser")
-.usage("$0 <cmd> [args]")
-.command(
-    "email [email], password [password]",
-    "welcome ter yargs!",
-    (yargs) => {
-        yargs.positional(
-            "email", { type: "string", describe: "adresse e-mail de l'utilisateur"},
-            "password", { type: "string", describe: "mot de passe de l'utilisateur"}
-        );
+yargs.command({
+    command: 'adduser',
+    describe: 'Enregistrer un nouvel utilisateur',
+    builder: {
+        email: {
+            describe: "adresse e-mail de l'utilisateur",
+            demandOption: true,
+            type: 'string'     
+        },
+        password: {  
+            describe: "mot de passe de l'utilisateur",
+            demandOption: true,
+            type: 'string'
+        }
     },
-    function (argv) {
+    handler(argv) {
         let email = argv.email;
         let password = argv.password;
         var salt = bcrypt.genSaltSync(10);
@@ -30,5 +34,6 @@ require("yargs")
             console.log("utilisateur enregistré");
         });
     }
-)
-.help().argv;
+})
+   
+yargs.parse();
