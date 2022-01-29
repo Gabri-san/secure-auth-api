@@ -1,167 +1,78 @@
 const express = require('express');
-const router = express.Router();
-const db  = require('./dbConnection');
-const { signupValidation, loginValidation } = require('./validation');
-const { validationResult } = require('express-validator');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const db = require('./dbConnector');
 
-router.post('/register', signupValidation, async (req, res, next) => {
-    // génération du sel
-    const salt = await bcrypt.genSalt(10);
-    db.query(
-        `SELECT * FROM users WHERE LOWER(email) = LOWER(${db.escape(req.body.email)});`,
-        (err, result) => {
-            if (result.length) {
-                return res.status(409).send({
-                    msg: 'Un compte existe déjà !'
-                });
-            } else {
-                // username is available
-                bcrypt.hash(req.body.password, salt, (err, hash) => {
-                    if (err) {
-                        return res.status(500).send({
-                            msg: err
-                        });
-                    } else {
-                        // has hashed pw => add to database
-                        db.query(
-                            `INSERT INTO users (email, password, salt) VALUES (
-                                ${db.escape(req.body.email)},
-                                ${db.escape(hash)},
-                                ${db.escape(salt)}
-                            )`,
-                            (err, result) => {
-                                if (err) {
-                                    //throw err;
-                                    return res.status(400).send({
-                                        msg: err
-                                    });
-                                }
-                                return res.status(201).send({
-                                    msg: 'Compte crée avec succès.'
-                                });
-                            }
-                        );
-                    }
-                });
-            }
-        }
-    );
-});
+var app = express();
+const router = express.Router();
+var cookieParser = require("cookie-parser");
 
-router.post('/session', loginValidation, async (req, res, next) => {
-    const salt = await bcrypt.genSalt(10);
-    db.query(
-        `SELECT * FROM users WHERE email = ${db.escape(req.body.email)};`,
-        (err, result) => {
-            // user does not exists
-            if (err) {
-                throw err;
-            }
-            if (!result.length) {
-                return res.status(401).send({
-                    msg: 'Email or password is incorrect!'
-                });
-            }
-            // check password
-            bcrypt.compare(
-                req.body.password,
-                result[0]['password'],
-                (bErr, bResult) => {
-                    // wrong password
-                    if (bErr) {
-                        throw bErr;
-                        return res.status(401).send({
-                            msg: 'Email or password is incorrect!'
-                        });
-                    }
-                    if (bResult) {
-                        const token = jwt.sign({id:result[0].id},'the-super-strong-secrect',{ expiresIn: '1h' });
-                        // update salt
-                        db.query(
-                            `UPDATE users SET salt = ${db.escape(salt)} WHERE email = ${db.escape(req.body.email)};`,
-                            (err, result) => {
-                                if (err) { throw err; }
-                                bcrypt.hash(req.body.password, salt, (err, hash) => {
-                                    if (err) {
-                                        return res.status(500).send({ msg: err });
-                                    } else {
-                                        // has hashed pw => add to database
-                                        db.query(
-                                            `update users set password = ${db.escape(hash)} where email = ${db.escape(req.body.email)};`,
-                                            (err, result) => {
-                                                if (err) {
-                                                    //return res.status(401).send({msg: 'Username or password is incorrect!'});
-                                                    throw err;
-                                                }
-                                                res.set('Authorization', 'Bearer '+token);
-                                                return res.status(200).send({
-                                                    msg: 'Logged in!',
-                                                    token,
-                                                    user: result[0]
-                                                });
-                                            }
-                                        );
-                                    }
-                                });
-                            }
-                        );
-                    }
+const secret = "toto";
+
+app.use(cookieParser());
+
+const database = db.dbConnector;
+console.log(database);
+database.model();
+const sequelize = database.sequelizeInstance;
+
+router.post('/session', (req, res) => {
+    let data = req.body;
+    if (data.constructor === Object && Object.keys(data).length === 0) {
+        res.status(204).send("no data");
+    } else {
+        sequelize.models.User.findOne({
+            where: { email: data.email }
+        }).then((user) => {
+            if (user) {
+                // password validation
+                let hash = bcrypt.hashSync(data.password, user.salt);
+                let checking = bcrypt.compare(user.password, hash)
+                if (checking) {
+                    // updating salt
+                    var newSalt = bcrypt.genSaltSync(10);
+                    var newHash = bcrypt.hashSync(data.password, newSalt);
+                    sequelize.models.User.update(
+                        { password: newHash, salt: newSalt },
+                        { where: { email: data.email } }
+                    ).then((result) => {
+                        console.log(result);
+                        return true;
+                    });
+                    const token = jwt.sign({ email: data.email }, secret);
+                    // set http only cookie
+                    return res.cookie('access_token', token, {
+                        httpOnly: true,
+                        secure: true
+                    }).status(201).json({ token });
+                } else {
+                    res.status(401).send("accès refusé");
                 }
-            );
-        }
-    );
+            } else {
+                res.status(401).send("accès refusé");
+            }
+        });
+    }
 });
 
-router.delete('/session', signupValidation, (req, res, next) => {
-    if (!req.headers.authorization || !req.headers.authorization.startsWith('Bearer') || !req.headers.authorization.split(' ')[1]) {
-        return res.status(422).json({
-            message: "Token invalide.",
-        });
+router.delete('/session', (req, res) => {
+    const token = req.cookies.access_token;
+    if (!token) {
+        res.status(401).send("accès refusé");
+    } else {
+        return res.clearCookie('access_token').status(204).json({ message: "logged out" });
     }
-    const theToken = req.headers.authorization.split(' ')[1];
-    db.query(
-        `INSERT INTO blacklist (token) VALUEs (${db.escape(theToken)});`,
-        (err) => {
-            if (err) { throw err; }
-            return res.status(200).send({
-                msg: 'Token blacklisted. Logged out.'
-            });
-        }
-    );
-    res.set('Authorization', 'none');
-})
+});
 
-router.get('/me', signupValidation, (req, res, next) => {
-    if(!req.headers.authorization || !req.headers.authorization.startsWith('Bearer') || !req.headers.authorization.split(' ')[1]) {
-        return res.status(422).json({
-            message: "Please provide the token",
+app.get("/me", (req, res) => {
+    const token = req.cookies.access_token;
+    if (!token) {
+        res.status(401).send("accès refusé");
+    } else {
+        jwt.verify(token, secret, (err, decoded) => {
+            res.status(200).send(decoded);
         });
     }
-    db.query('SELECT token FROM blacklist', function(err, result, fields) {
-        if (err) throw err;
-        const blacklist = [];
-        Object.keys(result).forEach(function(key) {
-            var row = result[key];
-            blacklist.push(row.token);
-        });
-        console.log(blacklist);
-        const theToken = req.headers.authorization.split(' ')[1];
-        if(blacklist.includes(theToken)) {
-            console.log("Token blacklisté");
-            return res.status(422).json({
-                message: "Token blacklisté !",
-            });
-        } else {
-            console.log("Token OK");
-            const decoded = jwt.verify(theToken, 'the-super-strong-secrect');
-            db.query('SELECT * FROM users where id=?', decoded.id, function (error, results, fields) {
-                if (error) throw error;
-                return res.send({ error: false, data: results[0], message: 'Succes' });
-        });
-        }
-    });
 });
 
 module.exports = router;
