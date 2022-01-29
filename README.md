@@ -1,6 +1,7 @@
 # TP - JWT + HTTP + ExpressJS
 
 Auteur : Gabriel DUCHEMIN
+
 Enseignant : Pierre TELLIER-ROBERT
 
 # Enregistrer un nouvel utilisateur
